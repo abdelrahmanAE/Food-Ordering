@@ -560,7 +560,7 @@ const MockData = {
 };
 
 const MockApi = {
-  async request(endpoint) {
+  async request(endpoint, options = {}) {
     const url = new URL(endpoint, "https://example.com");
     const path = url.pathname;
     const params = url.searchParams;
