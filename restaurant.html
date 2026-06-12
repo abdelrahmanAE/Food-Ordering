@@ -1,31 +1,36 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Restaurant — Bites</title>
-  <link rel="stylesheet" href="css/styles.css">
-</head>
-<body class="app-body">
-  <div id="restaurant-header" class="restaurant-header"></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Restaurant — Bites</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body class="app-body">
+    <div id="restaurant-header" class="restaurant-header"></div>
 
-  <main class="app-main restaurant-main">
-    <div class="menu-toolbar">
-      <div class="search-box compact">
-        <input type="search" id="menu-search" placeholder="Search this menu...">
+    <main class="app-main restaurant-main">
+      <div class="menu-toolbar">
+        <div class="search-box compact">
+          <input
+            type="search"
+            id="menu-search"
+            placeholder="Search this menu..."
+          />
+        </div>
       </div>
-    </div>
-    <div id="category-filters" class="filter-pills"></div>
-    <div id="menu-list" class="menu-list">
-      <div class="loading"><div class="spinner"></div></div>
-    </div>
-  </main>
+      <div id="category-filters" class="filter-pills"></div>
+      <div id="menu-list" class="menu-list">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </main>
 
-  <script src="js/config.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/cart.js"></script>
-  <script src="js/restaurant.js"></script>
-</body>
+    <script src="js/config.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/mock-data.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/cart.js"></script>
+    <script src="js/restaurant.js"></script>
+  </body>
 </html>
