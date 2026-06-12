@@ -114,6 +114,23 @@ const MockData = {
     },
   ],
 
+  users: [
+    {
+      id: 1,
+      fullName: "Admin User",
+      email: "admin@bites.com",
+      password: "Admin123!",
+      role: "Admin",
+    },
+    {
+      id: 2,
+      fullName: "Demo Customer",
+      email: "demo@bites.com",
+      password: "Demo1234!",
+      role: "Customer",
+    },
+  ],
+
   categories: [
     { id: 1, restaurantId: 1, name: "Burgers" },
     { id: 2, restaurantId: 1, name: "Chicken" },
@@ -566,6 +583,17 @@ const MockApi = {
       return this.getMenuCategories(restaurantId);
     }
 
+    const method = (options?.method || "GET").toUpperCase();
+    const body = options?.body ? JSON.parse(options.body) : null;
+
+    if (path === "/auth/login" && method === "POST") {
+      return this.login(body);
+    }
+
+    if (path === "/auth/register" && method === "POST") {
+      return this.register(body);
+    }
+
     if (path === "/menu") {
       const restaurantId = params.has("restaurantId")
         ? parseInt(params.get("restaurantId"), 10)
@@ -577,6 +605,62 @@ const MockApi = {
     return Promise.reject(
       new Error("Mock API route not implemented: " + endpoint),
     );
+  },
+
+  async login(body) {
+    if (!body?.email || !body?.password) {
+      throw new Error("Email and password are required.");
+    }
+
+    const user = MockData.users.find(
+      (u) =>
+        u.email.toLowerCase() === body.email.toLowerCase() &&
+        u.password === body.password,
+    );
+
+    if (!user) {
+      throw new Error("Invalid email or password.");
+    }
+
+    return {
+      token: `mock-token-${user.id}`,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+    };
+  },
+
+  async register(body) {
+    if (!body?.fullName || !body?.email || !body?.password) {
+      throw new Error("Full name, email, and password are required.");
+    }
+
+    const existing = MockData.users.some(
+      (u) => u.email.toLowerCase() === body.email.toLowerCase(),
+    );
+
+    if (existing) {
+      throw new Error("An account with this email already exists.");
+    }
+
+    const nextId =
+      MockData.users.reduce((max, user) => Math.max(max, user.id), 0) + 1;
+    const newUser = {
+      id: nextId,
+      fullName: body.fullName,
+      email: body.email.toLowerCase(),
+      password: body.password,
+      role: "Customer",
+    };
+
+    MockData.users.push(newUser);
+
+    return {
+      token: `mock-token-${newUser.id}`,
+      fullName: newUser.fullName,
+      email: newUser.email,
+      role: newUser.role,
+    };
   },
 
   async getRestaurants() {
