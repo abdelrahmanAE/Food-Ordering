@@ -17,7 +17,6 @@ public class OrdersController : ControllerBase
     private readonly AppDbContext _db;
     private readonly DemoPaymentService _paymentService;
 
-    public OrdersController(AppDbContext db) => _db = db;
     public OrdersController(AppDbContext db, DemoPaymentService paymentService)
     {
         _db = db;
@@ -28,7 +27,6 @@ public class OrdersController : ControllerBase
         int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpPost]
-    public async Task<ActionResult<OrderDto>> CreateOrder([FromBody] CreateOrderRequest request)
     public async Task<ActionResult<OrderDto>> CreateOrder([FromBody] CheckoutWithPaymentRequest request)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -92,10 +90,9 @@ public class OrdersController : ControllerBase
             Notes = request.Notes?.Trim(),
             TotalAmount = total,
             PaymentMethod = request.PaymentMethod,
-            PaymentReference = paymentRef,
             PaymentReference = paymentResult.PaymentReference,
             TransactionId = paymentResult.TransactionId,
-            PaymentStatus = paymentResult.PayOnDelivery ? PaymentStatus.Pending : PaymentStatus.Paid,
+            PaymentStatus = paymentResult.PayOnDelivery ? PaymentStatus.PayOnDelivery : PaymentStatus.Paid,
             PaidAt = paymentResult.PayOnDelivery ? null : DateTime.UtcNow,
             Status = OrderStatus.Pending,
             Items = orderItems
@@ -107,14 +104,18 @@ public class OrdersController : ControllerBase
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, await MapOrderAsync(order.Id));
     }
 
-    private static string? ValidatePayment(CreateOrderRequest request)
+    private static string? ValidatePayment(CheckoutWithPaymentRequest request)
     {
         return request.PaymentMethod switch
         {
-            PaymentMethod.VodafoneCash when string.IsNullOrWhiteSpace(request.PaymentPhone)
+            PaymentMethod.VodafoneCash when request.Vodafone is null || string.IsNullOrWhiteSpace(request.Vodafone.Phone)
                 => "Vodafone Cash requires your phone number.",
-            PaymentMethod.VodafoneCash when !IsValidEgyptPhone(request.PaymentPhone!)
+            PaymentMethod.VodafoneCash when request.Vodafone is not null && !IsValidEgyptPhone(request.Vodafone.Phone)
                 => "Enter a valid Egyptian phone number (e.g. 01012345678).",
+            PaymentMethod.Visa when request.Card is null
+                => "Visa payment requires card details.",
+            PaymentMethod.Fawry when string.IsNullOrWhiteSpace(request.FawrySessionId)
+                => "Fawry payment requires a session id.",
             _ => null
         };
     }
@@ -125,12 +126,12 @@ public class OrdersController : ControllerBase
         return digits.Length is 10 or 11 && digits.StartsWith("01");
     }
 
-    private static string? BuildPaymentReference(CreateOrderRequest request)
+    private static string? BuildPaymentReference(CheckoutWithPaymentRequest request)
     {
         return request.PaymentMethod switch
         {
             PaymentMethod.Fawry => $"FAW-{Random.Shared.Next(100000, 999999)}",
-            PaymentMethod.VodafoneCash => request.PaymentPhone?.Trim(),
+            PaymentMethod.VodafoneCash => request.Vodafone?.Phone?.Trim(),
             PaymentMethod.Visa => $"VISA-****{Random.Shared.Next(1000, 9999)}",
             _ => null
         };
