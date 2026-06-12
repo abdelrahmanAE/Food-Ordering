@@ -11,7 +11,7 @@ const Api = {
     }
 
     if (USE_MOCK_API) {
-      return MockApi.request(endpoint);
+      return MockApi.request(endpoint, options);
     }
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
