@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Orders — Bites</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="app-body">
+  <header class="app-header simple">
+    <div class="app-header-inner">
+      <a href="index.html" class="back-link">← Home</a>
+      <h1 class="page-title">My Orders</h1>
+      <span></span>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <div id="success-banner" class="success-banner" style="display:none"></div>
+    <div id="orders-list" class="orders-list">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/cart.js"></script>
+  <script>
+    if (!Auth.requireAuth()) throw new Error('auth required');
+
+    function formatPayStatus(status) {
+      const map = { Paid: 'Paid ✓', PayOnDelivery: 'Pay on delivery', AwaitingPayment: 'Awaiting payment', Failed: 'Failed' };
+      return map[status] || status;
+    }
+
+    function formatDate(dateStr) {
+      return new Date(dateStr).toLocaleDateString('en-EG', {
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    function showSuccessBanner() {
+      const lastOrder = sessionStorage.getItem('lastOrder');
+      if (!lastOrder || !Utils.getQueryParam('success')) return;
+
+      const order = JSON.parse(lastOrder);
+      sessionStorage.removeItem('lastOrder');
+
+      const banner = document.getElementById('success-banner');
+      let extra = '';
+      if (order.transactionId) {
+        extra = `<div class="fawry-code">Transaction: <strong>${order.transactionId}</strong></div>`;
+      } else if (order.paymentReference) {
+        extra = `<div class="fawry-code">Ref: ${order.paymentReference}</div>`;
+      }
+
+      const paidLabel = order.paymentStatus === 'PayOnDelivery'
+        ? 'Pay on delivery'
+        : order.paymentStatus === 'Paid' ? '✓ Paid' : order.paymentStatus;
+
+      banner.style.display = 'block';
+      banner.innerHTML = `
+        <strong>Order #${order.id} confirmed!</strong>
+        <p>${order.paymentMethod} · ${paidLabel} · ${Utils.formatPrice(order.totalAmount)}</p>
+        ${extra}
+      `;
+    }
+
+    function renderOrders(orders) {
+      const container = document.getElementById('orders-list');
+
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <h2>No orders yet</h2>
+            <p>Tap a restaurant and order something tasty.</p>
+            <a href="index.html" class="btn btn-primary">Browse restaurants</a>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = orders.map(order => `
+        <div class="order-card">
+          <div class="order-header">
+            <div>
+              <h3>Order #${order.id}</h3>
+              <div class="order-date">${formatDate(order.createdAt)}</div>
+            </div>
+            <span class="status-badge status-${order.status}">${order.status.replace(/([A-Z])/g, ' $1').trim()}</span>
+          </div>
+          <div class="order-items-list">
+            ${order.items.map(i => `${i.quantity}× ${i.name}`).join(' · ')}
+          </div>
+          <div class="order-meta">
+            <span>📍 ${order.deliveryAddress}</span>
+            <span>💳 ${order.paymentMethod} · <span class="pay-status pay-${order.paymentStatus}">${formatPayStatus(order.paymentStatus)}</span>${order.transactionId ? ` · ${order.transactionId}` : ''}</span>
+          </div>
+          <div class="order-footer">
+            <span class="order-total">${Utils.formatPrice(order.totalAmount)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      showSuccessBanner();
+      try {
+        const orders = await Api.get('/orders');
+        renderOrders(orders);
+      } catch (err) {
+        document.getElementById('orders-list').innerHTML = `
+          <div class="empty-state"><h2>Could not load orders</h2><p>${err.message}</p></div>
+        `;
+      }
+    });
+  </script>
+</body>
+</html>

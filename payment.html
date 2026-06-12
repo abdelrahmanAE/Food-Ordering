@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment — Bites</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="app-body">
+  <header class="app-header simple">
+    <div class="app-header-inner">
+      <a href="cart.html" class="back-link">← Cart</a>
+      <h1 class="page-title">Payment</h1>
+      <span></span>
+    </div>
+  </header>
+
+  <main class="app-main" id="payment-main">
+    <div class="loading"><div class="spinner"></div></div>
+  </main>
+
+  <div id="payment-overlay" class="payment-overlay">
+    <div class="processing-card">
+      <div class="spinner"></div>
+      <p class="processing-title">Processing payment...</p>
+      <p class="processing-sub">Please wait</p>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/cart.js"></script>
+  <script src="js/payment.js"></script>
+  <script>
+    if (!Auth.isLoggedIn()) {
+      window.location.href = 'login.html';
+    }
+
+    const METHODS = [
+      { id: 'CashOnDelivery', icon: '💵', name: 'Cash on Delivery' },
+      { id: 'Visa', icon: '💳', name: 'Visa / Mastercard' },
+      { id: 'Fawry', icon: '🏪', name: 'Fawry' },
+      { id: 'VodafoneCash', icon: '📱', name: 'Vodafone Cash' }
+    ];
+
+    let draft = null;
+
+    async function init() {
+      draft = Payment.getCheckoutDraft();
+      if (!draft || !Cart.getItems().length) {
+        window.location.href = 'cart.html';
+        return;
+      }
+
+      await Payment.loadDemoInfo();
+      render();
+    }
+
+    function render() {
+      const total = draft.total;
+      const main = document.getElementById('payment-main');
+
+      main.innerHTML = `
+        <div class="pay-amount-box">
+          <span>Total to pay</span>
+          <strong>${Utils.formatPrice(total)}</strong>
+          <small>${draft.restaurantName}</small>
+        </div>
+
+        <div class="demo-sandbox-banner">
+          🧪 <strong>Demo sandbox</strong> — practice real flows, no real money charged
+        </div>
+
+        <div class="checkout-section">
+          <h3>Choose payment method</h3>
+          <div class="payment-tabs" id="method-tabs">
+            ${METHODS.map(m => `
+              <button type="button" class="payment-tab ${Payment.method === m.id ? 'active' : ''}" data-method="${m.id}">
+                <span>${m.icon}</span>${m.name}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <div id="payment-panel"></div>
+        <div id="pay-error" class="form-error"></div>
+        <button id="pay-btn" class="btn btn-primary btn-block btn-checkout">Pay ${Utils.formatPrice(total)}</button>
+
+        <div class="demo-credentials" id="demo-creds"></div>
+      `;
+
+      renderPanel();
+      renderDemoCreds();
+      bindTabs();
+      document.getElementById('pay-btn').addEventListener('click', handlePay);
+    }
+
+    function renderDemoCreds() {
+      const info = Payment.demoInfo;
+      if (!info) return;
+      document.getElementById('demo-creds').innerHTML = `
+        <h4>Demo credentials</h4>
+        <p><strong>Visa success:</strong> ${info.testCards[0]?.number} · Exp 12/28 · CVV 123</p>
+        <p><strong>Card declined:</strong> ${info.testCards[1]?.number}</p>
+        <p><strong>Vodafone OTP:</strong> ${info.vodafoneDemoOtp}</p>
+      `;
+    }
+
+    function bindTabs() {
+      document.querySelectorAll('.payment-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          Payment.method = tab.dataset.method;
+          Payment.vodafoneSession = null;
+          Payment.fawrySession = null;
+          document.querySelectorAll('.payment-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          renderPanel();
+          updatePayButton();
+        });
+      });
+    }
+
+    function renderPanel() {
+      const panel = document.getElementById('payment-panel');
+      const total = draft.total;
+
+      if (Payment.method === 'CashOnDelivery') {
+        panel.innerHTML = `
+          <div class="checkout-section pay-panel">
+            <p class="pay-panel-desc">Pay the delivery driver in cash when your food arrives. No online charge now.</p>
+            <div class="cod-steps">
+              <div class="cod-step"><span>1</span> Order confirmed instantly</div>
+              <div class="cod-step"><span>2</span> Track your delivery</div>
+              <div class="cod-step"><span>3</span> Pay ${Utils.formatPrice(total)} in cash</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (Payment.method === 'Visa') {
+        panel.innerHTML = `
+          <div class="checkout-section pay-panel">
+            <div class="card-preview">
+              <div class="card-chip"></div>
+              <div class="card-number-preview" id="card-preview-num">•••• •••• •••• ••••</div>
+              <div class="card-preview-footer">
+                <span id="card-preview-name">YOUR NAME</span>
+                <span id="card-preview-exp">MM/YY</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Card number</label>
+              <input type="text" id="card-number" placeholder="4242 4242 4242 4242" maxlength="19" inputmode="numeric">
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label>Expiry</label>
+                <input type="text" id="card-expiry" placeholder="MM/YY" maxlength="5" inputmode="numeric">
+              </div>
+              <div class="form-group">
+                <label>CVV</label>
+                <input type="password" id="card-cvv" placeholder="123" maxlength="4" inputmode="numeric">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Cardholder name</label>
+              <input type="text" id="card-name" placeholder="Name on card">
+            </div>
+          </div>
+        `;
+        bindCardPreview();
+        return;
+      }
+
+      if (Payment.method === 'VodafoneCash') {
+        panel.innerHTML = `
+          <div class="checkout-section pay-panel">
+            <p class="pay-panel-desc">We'll send a demo USSD push to your Vodafone Cash wallet.</p>
+            <div class="form-group">
+              <label>Wallet number</label>
+              <input type="tel" id="vf-phone" placeholder="01012345678" maxlength="11" value="${draft.vodafonePhone || ''}">
+            </div>
+            <button type="button" class="btn btn-secondary btn-block" id="vf-send-otp">Send OTP</button>
+            <div id="vf-otp-section" style="display:none;margin-top:16px">
+              <div class="otp-sent-msg" id="vf-otp-msg"></div>
+              <div class="form-group">
+                <label>Enter 6-digit OTP</label>
+                <input type="text" id="vf-otp" placeholder="123456" maxlength="6" inputmode="numeric" class="otp-input">
+              </div>
+            </div>
+          </div>
+        `;
+        document.getElementById('vf-send-otp').addEventListener('click', sendVodafoneOtp);
+        return;
+      }
+
+      if (Payment.method === 'Fawry') {
+        panel.innerHTML = `
+          <div class="checkout-section pay-panel">
+            <p class="pay-panel-desc">Generate a Fawry reference code, pay at any outlet, then confirm.</p>
+            <button type="button" class="btn btn-secondary btn-block" id="fawry-generate">Generate Fawry code</button>
+            <div id="fawry-code-box" style="display:none"></div>
+          </div>
+        `;
+        document.getElementById('fawry-generate').addEventListener('click', generateFawry);
+        if (Payment.fawrySession) showFawryCode(Payment.fawrySession);
+      }
+    }
+
+    function bindCardPreview() {
+      const num = document.getElementById('card-number');
+      const exp = document.getElementById('card-expiry');
+      const name = document.getElementById('card-name');
+
+      num?.addEventListener('input', () => {
+        num.value = Payment.formatCardNumber(num.value);
+        document.getElementById('card-preview-num').textContent = num.value || '•••• •••• •••• ••••';
+      });
+      exp?.addEventListener('input', () => {
+        exp.value = Payment.formatExpiry(exp.value);
+        document.getElementById('card-preview-exp').textContent = exp.value || 'MM/YY';
+      });
+      name?.addEventListener('input', () => {
+        document.getElementById('card-preview-name').textContent = name.value.toUpperCase() || 'YOUR NAME';
+      });
+    }
+
+    async function sendVodafoneOtp() {
+      const phone = document.getElementById('vf-phone').value.trim();
+      const btn = document.getElementById('vf-send-otp');
+      const err = document.getElementById('pay-error');
+      err.classList.remove('show');
+
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      try {
+        Payment.vodafoneSession = await Payment.requestVodafoneOtp(phone, draft.total);
+        document.getElementById('vf-otp-section').style.display = 'block';
+        document.getElementById('vf-otp-msg').textContent = Payment.vodafoneSession.message;
+        btn.textContent = 'OTP sent ✓';
+      } catch (e) {
+        err.textContent = e.message;
+        err.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Send OTP';
+      }
+    }
+
+    async function generateFawry() {
+      const btn = document.getElementById('fawry-generate');
+      const err = document.getElementById('pay-error');
+      err.classList.remove('show');
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+
+      try {
+        Payment.fawrySession = await Payment.initiateFawry(draft.total);
+        showFawryCode(Payment.fawrySession);
+        btn.style.display = 'none';
+      } catch (e) {
+        err.textContent = e.message;
+        err.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Generate Fawry code';
+      }
+    }
+
+    function showFawryCode(session) {
+      const box = document.getElementById('fawry-code-box');
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div class="fawry-code-display">
+          <span>Reference code</span>
+          <strong>${session.fawryCode}</strong>
+          <p>${session.instructions}</p>
+          <p class="fawry-amount">Amount: ${Utils.formatPrice(session.amount)}</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-block" id="fawry-simulate" style="margin-top:12px">
+          🧪 Simulate "I paid at Fawry"
+        </button>
+        <p class="payment-hint" style="margin-top:8px">In real life you'd pay at Fawry first. Here, click simulate after "paying".</p>
+      `;
+      document.getElementById('fawry-simulate').addEventListener('click', async () => {
+        const simBtn = document.getElementById('fawry-simulate');
+        simBtn.disabled = true;
+        simBtn.textContent = 'Confirming payment...';
+        try {
+          await Payment.simulateFawryPay(session.sessionId);
+          session.paid = true;
+          simBtn.textContent = '✓ Payment confirmed';
+          simBtn.classList.add('btn-success');
+        } catch (e) {
+          showError(e.message);
+          simBtn.disabled = false;
+          simBtn.textContent = '🧪 Simulate "I paid at Fawry"';
+        }
+      });
+    }
+
+    function updatePayButton() {
+      const btn = document.getElementById('pay-btn');
+      if (!btn) return;
+      const labels = {
+        CashOnDelivery: `Confirm order · ${Utils.formatPrice(draft.total)}`,
+        Visa: `Pay ${Utils.formatPrice(draft.total)}`,
+        Fawry: `Complete order · ${Utils.formatPrice(draft.total)}`,
+        VodafoneCash: `Pay ${Utils.formatPrice(draft.total)}`
+      };
+      btn.textContent = labels[Payment.method] || 'Pay';
+    }
+
+    function showError(msg) {
+      const err = document.getElementById('pay-error');
+      err.textContent = msg;
+      err.classList.add('show');
+    }
+
+    async function handlePay() {
+      const err = document.getElementById('pay-error');
+      err.classList.remove('show');
+      const btn = document.getElementById('pay-btn');
+      btn.disabled = true;
+
+      const payload = {
+        deliveryAddress: draft.address,
+        notes: draft.notes,
+        paymentMethod: Payment.method,
+        items: draft.items.map(i => ({ menuItemId: i.id, quantity: i.quantity }))
+      };
+
+      if (Payment.method === 'Visa') {
+        payload.card = {
+          cardNumber: document.getElementById('card-number').value,
+          expiry: document.getElementById('card-expiry').value,
+          cvv: document.getElementById('card-cvv').value,
+          cardholderName: document.getElementById('card-name').value
+        };
+        Payment.showProcessing('Processing card...', 'Contacting payment gateway (demo)');
+      } else if (Payment.method === 'VodafoneCash') {
+        if (!Payment.vodafoneSession) {
+          showError('Request OTP first.');
+          btn.disabled = false;
+          return;
+        }
+        payload.vodafone = {
+          phone: document.getElementById('vf-phone').value,
+          otp: document.getElementById('vf-otp').value,
+          otpSessionId: Payment.vodafoneSession.sessionId
+        };
+        Payment.showProcessing('Verifying Vodafone Cash...', 'Confirming OTP');
+      } else if (Payment.method === 'Fawry') {
+        if (!Payment.fawrySession?.paid) {
+          showError('Generate Fawry code and simulate payment first.');
+          btn.disabled = false;
+          return;
+        }
+        payload.fawrySessionId = Payment.fawrySession.sessionId;
+        Payment.showProcessing('Confirming Fawry payment...');
+      } else {
+        Payment.showProcessing('Confirming order...');
+      }
+
+      try {
+        const result = await Payment.checkout(payload);
+        Payment.hideProcessing();
+
+        if (!result.success) {
+          showError(result.message);
+          btn.disabled = false;
+          return;
+        }
+
+        Cart.clear();
+        sessionStorage.removeItem('checkoutDraft');
+        sessionStorage.setItem('lastOrder', JSON.stringify(result.order));
+        window.location.href = 'orders.html?success=1';
+      } catch (e) {
+        Payment.hideProcessing();
+        showError(e.message);
+        btn.disabled = false;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

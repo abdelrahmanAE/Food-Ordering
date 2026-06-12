@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cart — Bites</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="app-body">
+  <header class="app-header simple">
+    <div class="app-header-inner">
+      <a href="index.html" class="back-link">← Back</a>
+      <h1 class="page-title">Your cart</h1>
+      <span></span>
+    </div>
+  </header>
+
+  <main class="app-main checkout-main">
+    <div id="cart-content"></div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/cart.js"></script>
+  <script>
+    function renderCart() {
+      const container = document.getElementById('cart-content');
+      const items = Cart.getItems();
+      const restaurant = Cart.getRestaurant();
+
+      if (items.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <h2>Cart is empty</h2>
+            <p>Pick a restaurant and tap + on anything you like.</p>
+            <a href="index.html" class="btn btn-primary">Browse restaurants</a>
+          </div>
+        `;
+        return;
+      }
+
+      const subtotal = Cart.getSubtotal();
+      const delivery = Cart.getDeliveryFee();
+      const total = Cart.getTotal();
+
+      container.innerHTML = `
+        <div class="checkout-restaurant">
+          <span>Ordering from</span>
+          <strong>${restaurant?.name || ''}</strong>
+        </div>
+
+        <div class="checkout-items">
+          ${items.map(item => `
+            <div class="checkout-item">
+              <img src="${item.imageUrl}" alt="${item.name}">
+              <div class="checkout-item-info">
+                <strong>${item.name}</strong>
+                <span>${Utils.formatPrice(item.price)}</span>
+              </div>
+              <div class="inline-qty">
+                <button class="qty-btn-sm" data-action="decrease" data-id="${item.id}">−</button>
+                <span>${item.quantity}</span>
+                <button class="qty-btn-sm" data-action="increase" data-id="${item.id}">+</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="checkout-section">
+          <h3>Delivery address</h3>
+          <textarea id="address" placeholder="Building, street, area, city..." rows="2"></textarea>
+        </div>
+
+        <div class="checkout-section">
+          <h3>Notes <span class="optional">optional</span></h3>
+          <input type="text" id="notes" placeholder="Ring bell, leave at door...">
+        </div>
+
+        <div class="checkout-summary">
+          <div class="summary-row"><span>Subtotal</span><span>${Utils.formatPrice(subtotal)}</span></div>
+          <div class="summary-row"><span>Delivery</span><span>${Utils.formatPrice(delivery)}</span></div>
+          <div class="summary-row total"><span>Total</span><span>${Utils.formatPrice(total)}</span></div>
+        </div>
+
+        <div id="checkout-error" class="form-error"></div>
+        <button id="checkout-btn" class="btn btn-primary btn-block btn-checkout">
+          Continue to payment · ${Utils.formatPrice(total)}
+        </button>
+      `;
+
+      container.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = parseInt(btn.dataset.id);
+          const item = Cart.getItems().find(i => i.id === id);
+          if (!item) return;
+          const qty = btn.dataset.action === 'increase' ? item.quantity + 1 : item.quantity - 1;
+          Cart.updateQuantity(id, qty);
+          renderCart();
+        });
+      });
+
+      document.getElementById('checkout-btn').addEventListener('click', goToPayment);
+    }
+
+    function goToPayment() {
+      if (!Auth.isLoggedIn()) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      const address = document.getElementById('address').value.trim();
+      const errorEl = document.getElementById('checkout-error');
+      errorEl.classList.remove('show');
+
+      if (address.length < 5) {
+        errorEl.textContent = 'Please enter your delivery address.';
+        errorEl.classList.add('show');
+        return;
+      }
+
+      const restaurant = Cart.getRestaurant();
+      sessionStorage.setItem('checkoutDraft', JSON.stringify({
+        address,
+        notes: document.getElementById('notes').value.trim() || null,
+        items: Cart.getItems(),
+        total: Cart.getTotal(),
+        subtotal: Cart.getSubtotal(),
+        deliveryFee: Cart.getDeliveryFee(),
+        restaurantName: restaurant?.name || ''
+      }));
+
+      window.location.href = 'payment.html';
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCart);
+  </script>
+</body>
+</html>

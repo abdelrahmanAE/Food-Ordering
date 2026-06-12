@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Bites</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="index.html" class="logo">Bites<span>.</span></a>
+      <ul class="nav-links">
+        <li><a href="index.html">Menu</a></li>
+        <li><a href="admin.html" class="active">Admin</a></li>
+      </ul>
+      <div class="nav-actions">
+        <div id="user-menu" style="display:flex">
+          <span class="user-greeting">Admin: <strong id="user-name"></strong></span>
+          <a href="#" id="logout-btn" class="btn btn-ghost btn-sm">Logout</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <section class="section">
+    <div class="section-header">
+      <h2>Admin dashboard</h2>
+      <p>Manage orders and menu items</p>
+    </div>
+
+    <div class="admin-tabs">
+      <button class="tab-btn active" data-tab="orders">Orders</button>
+      <button class="tab-btn" data-tab="menu">Add menu item</button>
+    </div>
+
+    <div id="tab-orders">
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Customer</th>
+              <th>Items</th>
+              <th>Total</th>
+              <th>Status</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="orders-table-body">
+            <tr><td colspan="6" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tab-menu" style="display:none">
+      <div class="auth-card" style="max-width:520px">
+        <h1 style="font-size:1.25rem;margin-bottom:20px">Add new dish</h1>
+        <div id="menu-error" class="form-error"></div>
+        <div id="menu-success" class="form-error" style="background:#ecfdf5;color:#065f46;display:none"></div>
+        <form id="add-menu-form">
+          <div class="form-group">
+            <label for="item-name">Name</label>
+            <input type="text" id="item-name" required>
+          </div>
+          <div class="form-group">
+            <label for="item-desc">Description</label>
+            <textarea id="item-desc" required></textarea>
+          </div>
+          <div class="form-group">
+            <label for="item-price">Price ($)</label>
+            <input type="number" id="item-price" step="0.01" min="0.01" required>
+          </div>
+          <div class="form-group">
+            <label for="item-image">Image URL</label>
+            <input type="url" id="item-image" required placeholder="https://images.unsplash.com/...">
+          </div>
+          <div class="form-group">
+            <label for="item-category">Category</label>
+            <select id="item-category" required></select>
+          </div>
+          <div class="form-group" style="display:flex;gap:20px">
+            <label><input type="checkbox" id="item-available" checked> Available</label>
+            <label><input type="checkbox" id="item-featured"> Featured</label>
+          </div>
+          <button type="submit" class="btn btn-primary">Add dish</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    if (!Auth.requireAdmin()) throw new Error('admin required');
+
+    const statuses = ['Pending', 'Confirmed', 'Preparing', 'OutForDelivery', 'Delivered', 'Cancelled'];
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-orders').style.display = btn.dataset.tab === 'orders' ? 'block' : 'none';
+        document.getElementById('tab-menu').style.display = btn.dataset.tab === 'menu' ? 'block' : 'none';
+      });
+    });
+
+    async function loadOrders() {
+      const tbody = document.getElementById('orders-table-body');
+      try {
+        const orders = await Api.get('/admin/orders');
+        if (orders.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6">No orders yet</td></tr>';
+          return;
+        }
+        tbody.innerHTML = orders.map(o => `
+          <tr>
+            <td>#${o.id}</td>
+            <td>${o.customerName}<br><small style="color:var(--ink-soft)">${o.customerEmail}</small></td>
+            <td>${o.itemCount} items</td>
+            <td>$${o.totalAmount.toFixed(2)}</td>
+            <td>
+              <select class="status-select" data-order="${o.id}">
+                ${statuses.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}
+              </select>
+            </td>
+            <td>${new Date(o.createdAt).toLocaleDateString()}</td>
+          </tr>
+        `).join('');
+
+        tbody.querySelectorAll('.status-select').forEach(select => {
+          select.addEventListener('change', async () => {
+            try {
+              await Api.patch(`/admin/orders/${select.dataset.order}/status`, {
+                status: select.value
+              });
+            } catch (err) {
+              alert(err.message);
+              loadOrders();
+            }
+          });
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6">Error: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function loadCategories() {
+      const select = document.getElementById('item-category');
+      const categories = await Api.get('/menu/categories');
+      select.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+
+    document.getElementById('add-menu-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('menu-error');
+      const successEl = document.getElementById('menu-success');
+      errorEl.classList.remove('show');
+      successEl.style.display = 'none';
+
+      try {
+        await Api.post('/admin/menu', {
+          name: document.getElementById('item-name').value,
+          description: document.getElementById('item-desc').value,
+          price: parseFloat(document.getElementById('item-price').value),
+          imageUrl: document.getElementById('item-image').value,
+          categoryId: parseInt(document.getElementById('item-category').value),
+          isAvailable: document.getElementById('item-available').checked,
+          isFeatured: document.getElementById('item-featured').checked
+        });
+        e.target.reset();
+        document.getElementById('item-available').checked = true;
+        successEl.textContent = 'Dish added successfully!';
+        successEl.style.display = 'block';
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.add('show');
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadOrders();
+      loadCategories();
+    });
+  </script>
+</body>
+</html>
